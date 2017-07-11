@@ -1,0 +1,23 @@
+{
+  "name": "test_b2w",
+  "version": "1.0.0",
+  "description": "Challenge for B2W.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Luca Bezerra",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^0.16.2",
+    "body-parser": "^1.17.2",
+    "express": "^4.15.3",
+    "lodash": "^4.17.4",
+    "mongodb": "^2.2.30",
+    "mongoose": "^4.11.1",
+    "sharp": "^0.18.2"
+  },
+  "devDependencies": {
+    "nodemon": "^1.11.0"
+  }
+}

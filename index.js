@@ -16,31 +16,32 @@ const port = 3000;
 
 app.use(bodyParser.json());
 
-var storeImageIntoMongo = function(file) {
+// store downloaded files as Image objects into mongodb
+var storeImageIntoMongo = function(url, file) {
+  let splitFileName = file.split("/");
+  var fileName = splitFileName[splitFileName.length - 1];
   sharp(file)
     .resize(320, 240)
     .embed()
-    .toBuffer()
+    .toFile(`images/small/${fileName}`)
     .then( data_small => {
       var image = new Image;
-      image.small.data = data_small;
-      image.small.contentType = 'image/png';
+      image.original = url;
+      image.small = `images/small/${fileName}`;
 
       sharp(file)
           .resize(384, 288)
           .embed()
-          .toBuffer()
+          .toFile(`images/medium/${fileName}`)
           .then( data_medium => {
-            image.medium.data = data_medium;
-            image.medium.contentType = 'image/png';
+            image.medium = `images/medium/${fileName}`;
 
             sharp(file)
               .resize(640, 480)
               .embed()
-              .toBuffer()
+              .toFile(`images/large/${fileName}`)
               .then( data_large => {
-                image.large.data = data_large;
-                image.large.contentType = 'image/png';
+                image.large = `images/large/${fileName}`;
 
                 image.save(function (err, image) {
                   if (err) throw err;
@@ -54,32 +55,39 @@ var storeImageIntoMongo = function(file) {
     } );
 };
 
+// download file from URL to destination
 var download = function(url, dest, cb, imageList) {
-  var file = fs.createWriteStream(dest);
-  var request = http.get(url, function(response) {
-    response.pipe(file);
-    file.on('finish', function() {
-      file.close(null);  // close() is async, call cb after close completes.
-      storeImageIntoMongo(dest);
-    });
-  }).on('error', function(err) { // Handle errors
-    fs.unlink(dest); // Delete the file async. (But we don't check the result)
-    if (cb) cb(err.message);
+  Image.find({original: url}, function (err, images) {
+    if (err) return next(err);
+
+    if (images.length > 0) {
+      console.log(`Image from URL ${url} has already been download. Skipping it...`);
+    } else {
+      var file = fs.createWriteStream(dest);
+      var request = http.get(url, function(response) {
+        response.pipe(file);
+        file.on('finish', function() {
+          file.close(null);  // close() is async, call cb after close completes.
+          storeImageIntoMongo(url, dest);
+        });
+      }).on('error', function(err) { // Handle errors
+        fs.unlink(dest); // Delete the file async. (But we don't check the result)
+        if (cb) cb(err.message);
+      });
+    }
   });
 };
 
+// root - downloads files from the webservice
 app.get("/", (req, res) => {
   var imageList = [];
 
 	axios.get('http://54.152.221.29/images.json')
         .then(function (response) {
         	if (response.data) {
-        		console.log(typeof response.data);
-        		console.log(response.data);
         		for (var i = 0; i < response.data.images.length; i++) {
-        			console.log(response.data.images[i]);
               imageList.push(`pic${i}.jpg`);
-					    download(response.data.images[i].url, `pic${i}.jpg`, storeImageIntoMongo, imageList);
+					    download(response.data.images[i].url, `images/original/pic${i}.jpg`, storeImageIntoMongo, imageList);
         		}
             res.send("All images have been saved to the database. <a href=\"/images\">Click here</a> to see the images list.");
         	}
@@ -89,6 +97,7 @@ app.get("/", (req, res) => {
   	});
 });
 
+// route that lists links to the images in their different formats
 app.get("/images", (req, res, next) => {
   var listImages = [];
   var contentType = "image/png";
@@ -100,7 +109,14 @@ app.get("/images", (req, res, next) => {
     console.error(":::: images length:", images.length);
 
     for (var i=0; i < images.length; i++) {
-      listItems += `<li><a href="/images/${images[i].id}/">Image ${i+1}</a></li>`;
+      listItems += `<li>
+                      Original Image: <a href="${images[i].original}/">${images[i].original}</a>
+                      <ul>
+                        <li><a href="/images/${images[i].id}/small">Small</a></li>
+                        <li><a href="/images/${images[i].id}/medium">Medium</a></li>
+                        <li><a href="/images/${images[i].id}/large">Large</a></li>
+                      </ul>
+                    </li>`;
     }
 
     var html_content = "<p>Is this real life?</p><ul>" + listItems + "</ul>";
@@ -109,6 +125,7 @@ app.get("/images", (req, res, next) => {
   });
 });
 
+// route that allows the download of the images
 app.get("/images/:id/:size?", (req, res, next) => {
   var image = Image.findById(req.params.id).then((image) => {
     if (!image) {
@@ -117,21 +134,50 @@ app.get("/images/:id/:size?", (req, res, next) => {
 
     var size = req.params.size;
 
-    res.contentType("image/png");
     if (size && size == "small") {
-      res.send(image.small.data);
+      res.download(image.small);
     } else if (size && size == "medium") {
-      res.send(image.medium.data);
+      res.download(image.medium);
     } else if (size && size == "large") {
-      res.send(image.large.data);
+      res.download(image.large);
     } else {
-      res.send(image.medium.data);
+      res.download(image.medium);
     }
   }, (err) => {
     res.status(400).send();
   });
 });
 
+// starts the server and creates the folders if they don't exist
 app.listen(port, () =>{
+  fs.stat("images/", function (err, stats){
+    if (err) {
+      console.log('Folder doesn\'t exist, creating it...');
+      return fs.mkdir("images/", (err) => {
+        if (err) return err;
+
+        return fs.mkdir("images/small/", (err) => {
+          if (err) return err;
+
+          return fs.mkdir("images/medium/", (err) => {
+            if (err) return err;
+
+            return fs.mkdir("images/large/", (err) => {
+              if (err) return err;
+
+              return fs.mkdir("images/original/", (err) => {
+                if (err) return err;
+              });
+            });
+          });
+        });
+      });
+    }
+    if (!stats.isDirectory()) {
+      callback(new Error('images/ is not a directory!'));
+    } else {
+
+    }
+  });
 	console.log(`Server started on port ${port}.`);
 });

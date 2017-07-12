@@ -3,21 +3,27 @@ var mongoose = require("mongoose");
 var Image = mongoose.model("Image", {
 	original: {
 		type: String,
-		//required: true,
+		required: true,
 		minlength: 1,
 		trim: true
 	},
 	small: {
-		data: Buffer,
-		contentType: String
+		type: String,
+		required: true,
+		minlength: 1,
+		trim: true
 	},
 	medium: {
-		data: Buffer,
-		contentType: String
+		type: String,
+		required: true,
+		minlength: 1,
+		trim: true
 	},
 	large: {
-		data: Buffer,
-		contentType: String
+		type: String,
+		required: true,
+		minlength: 1,
+		trim: true
 	}
 });
 

@@ -17,7 +17,7 @@ const port = 3000;
 app.use(bodyParser.json());
 
 // store downloaded files as Image objects into mongodb
-var storeImageIntoMongo = function(url, file) {
+var storeImageIntoMongo = function(url, file, res) {
   let splitFileName = file.split("/");
   var fileName = splitFileName[splitFileName.length - 1];
   sharp(file)
@@ -46,29 +46,43 @@ var storeImageIntoMongo = function(url, file) {
                 image.save(function (err, image) {
                   if (err) throw err;
                   console.error('saved img to mongo');
+
+                  if (res) {
+                    res.send("All images have been saved to the database. <a href=\"/images\">Click here</a> to see the images list.");
+                  }
                 });
             });
           });
     })
     .catch( err => {
       console.error("ERROR:", err);
+      if (res) {
+        res.status(400).send(err);
+      }
     } );
 };
 
 // download file from URL to destination
-var download = function(url, dest, cb, imageList) {
+var download = function(url, dest, cb, imageList, res) {
   Image.find({original: url}, function (err, images) {
     if (err) return next(err);
 
     if (images.length > 0) {
       console.log(`Image from URL ${url} has already been download. Skipping it...`);
+      if (res) {
+        res.send("All images have been saved to the database. <a href=\"/images\">Click here</a> to see the images list.");
+      }
     } else {
       var file = fs.createWriteStream(dest);
       var request = http.get(url, function(response) {
         response.pipe(file);
         file.on('finish', function() {
           file.close(null);  // close() is async, call cb after close completes.
-          storeImageIntoMongo(url, dest);
+          if (res) {
+            storeImageIntoMongo(url, dest, res);
+          } else {
+            storeImageIntoMongo(url, dest, null);
+          }
         });
       }).on('error', function(err) { // Handle errors
         fs.unlink(dest); // Delete the file async. (But we don't check the result)
@@ -80,22 +94,31 @@ var download = function(url, dest, cb, imageList) {
 
 // root - downloads files from the webservice
 app.get("/", (req, res) => {
-  var imageList = [];
+  downloadRemoteImages(res);
+});
 
-	axios.get('http://54.152.221.29/images.json')
+var downloadRemoteImages = function(res) {
+  var imageList = [];
+  axios.get('http://54.152.221.29/images.json')
         .then(function (response) {
-        	if (response.data) {
-        		for (var i = 0; i < response.data.images.length; i++) {
+          if (response.data) {
+            for (var i = 0; i < response.data.images.length; i++) {
               imageList.push(`pic${i}.jpg`);
-					    download(response.data.images[i].url, `images/original/pic${i}.jpg`, storeImageIntoMongo, imageList);
-        		}
-            res.send("All images have been saved to the database. <a href=\"/images\">Click here</a> to see the images list.");
-        	}
+
+              if (i < response.data.images.length - 1) {
+                download(response.data.images[i].url, `images/original/pic${i}.jpg`, storeImageIntoMongo, imageList, null);
+              } else {
+                // if it's the last image, we pass the res object to render the response
+                download(response.data.images[i].url, `images/original/pic${i}.jpg`, storeImageIntoMongo, imageList, res);
+              }
+            }
+          }
         })
         .catch(function (error) {
           console.log(error);
-  	});
-});
+          res.status(400).send(error);
+    });
+}
 
 // route that lists links to the images in their different formats
 app.get("/images", (req, res, next) => {
@@ -110,7 +133,7 @@ app.get("/images", (req, res, next) => {
 
     for (var i=0; i < images.length; i++) {
       listItems += `<li>
-                      Original Image: <a href="${images[i].original}/">${images[i].original}</a>
+                      Original Image: <a href="${images[i].original}">${images[i].original}</a>
                       <ul>
                         <li><a href="/images/${images[i].id}/small">Small</a></li>
                         <li><a href="/images/${images[i].id}/medium">Medium</a></li>
@@ -181,3 +204,5 @@ app.listen(port, () =>{
   });
 	console.log(`Server started on port ${port}.`);
 });
+
+module.exports = {app, downloadRemoteImages};

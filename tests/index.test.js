@@ -6,17 +6,11 @@ const {app} = require("../index.js");
 const {Image} = require("../models/image.js");
 const {ObjectID} = require("mongodb");
 
-beforeEach((done) => {
-	Image.remove({})
-		// .then(() => {
-		// 	return index.downloadRemoteImages(null);
-		// })
-		.then(() => done());
-});
 
-describe("Fetch images", () => {
-	it("should download and store images into db", (done) => {
-		setTimeout(done, 15000);
+describe("Fetch and Download Images", function() {
+	it("should download and store images into db", function(done) {
+		this.timeout(15000);
+		Image.remove({});
 
 		var text = "All images have been saved to the database. <a href=\"/images\">Click here</a> to see the images list.";
 
@@ -32,9 +26,54 @@ describe("Fetch images", () => {
 				}
 
 				Image.find((err, images) => {
-					expect(images.length).toBe(10);
+					expect(images.length).toBeGreaterThanOrEqualTo(9);
 					done();
 				}).catch((err) => done(err));
 			});
 	});
+
+	it("should display a list of stored images", function(done) {
+		var text = "Original Image:";
+
+		index.downloadRemoteImages(null)
+
+		request(app)
+			.get("/images")
+			.expect(200)
+			.expect((res) => {
+				count = (res.res.text.match(/Original Image/g) || []).length
+				expect(count).toBe(10);
+			})
+			.end((err, res) => {
+				if (err) {
+					return done(err);
+				}
+
+				done();
+			});
+	});
+
+	it("should download an image from the server", function(done) {
+		Image.find((err, images) => {
+			if (images.length < 1)
+				return done("No image found!");
+
+			request(app)
+				.get(`/images/${images[0]._id}/small`)
+				.expect(200)
+				.expect((res) => {
+					var text = res.res.headers["content-disposition"];
+					var occurrences = (text.match(/filename="pic.\.jpg"/g) || []).length;
+					expect(occurrences).toBe(1);
+				})
+				.end((err, res) => {
+					if (err) {
+						return done(err);
+					}
+
+					done();
+				});
+		})
+	});
 });
+
